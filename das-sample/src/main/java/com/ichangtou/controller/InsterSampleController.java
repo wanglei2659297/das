@@ -3,7 +3,6 @@ package com.ichangtou.controller;
 import com.google.gson.Gson;
 import com.ichangtou.entity.Person;
 import com.ppdai.das.client.DasClient;
-import com.ppdai.das.client.Hints;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,33 +21,26 @@ import java.util.List;
  * @created: 2020/07/06 11:16
  */
 @RestController
-@RequestMapping("test")
+@RequestMapping("insert")
 @Slf4j
-public class Controller {
+public class InsterSampleController {
 
     @Autowired
     DasClient dasClient;
 
-    @RequestMapping("test")
+    @RequestMapping("sample")
     @ResponseBody
-    public long test() throws SQLException {
-
-        log.info("执行 test DasClient");
-        Person person = new Person();
-        person.setName("1234");
-        long i = dasClient.countBySample(person);
-        System.out.println("count:" + new Gson().toJson(i));
-
-        return i;
+    public int testInsert() throws SQLException {
+        return dasClient.insert(Person.builder().peopleid(123).name("发动机上课了").build());
     }
 
-    @RequestMapping("testInsert")
+    @RequestMapping("batch")
     @ResponseBody
-    public int[] testInsert() throws SQLException {
-        return testInsert(dasClient);
+    public int[] batchInsert() throws SQLException {
+        return batchInsert(dasClient);
     }
 
-    private int[] testInsert(DasClient dasClient) throws SQLException {
+    private int[] batchInsert(DasClient dasClient) throws SQLException {
         Integer id = Integer.parseInt(new SimpleDateFormat("HHmmssSSS").format(new Date()));
         List<Person> list = new ArrayList<>();
         for (int i = 100; i < 130; i++) {
