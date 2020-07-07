@@ -1,15 +1,14 @@
 package com.ppdai.das.core.client;
 
-import java.sql.Connection;
-import java.sql.SQLException;
-
-import org.apache.tomcat.jdbc.pool.PooledConnection;
-
+import com.ichangtou.IctPooledConnection;
 import com.ppdai.das.client.Hints;
-import com.ppdai.das.core.HintEnum;
 import com.ppdai.das.core.DasConfigureFactory;
 import com.ppdai.das.core.DasException;
 import com.ppdai.das.core.DasLogger;
+import com.ppdai.das.core.HintEnum;
+
+import java.sql.Connection;
+import java.sql.SQLException;
 
 public class DalConnection {
 	private Integer oldIsolationLevel;
@@ -123,7 +122,7 @@ public class DalConnection {
 	}
 
 	private void markDiscard(Connection conn) throws SQLException {
-		PooledConnection pConn = (PooledConnection)conn.unwrap(PooledConnection.class);
+		IctPooledConnection pConn = (IctPooledConnection)conn.unwrap(IctPooledConnection.class);
 		pConn.setDiscarded(true);
 	}
 }

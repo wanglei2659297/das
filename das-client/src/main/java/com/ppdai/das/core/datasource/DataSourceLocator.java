@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.naming.NamingException;
 import javax.sql.DataSource;
 
+import com.ichangtou.IctDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -81,9 +82,8 @@ public class DataSourceLocator {
         Map<String, Integer> map = new HashMap<>();
         for (Map.Entry<String, DataSource> entry : cache.entrySet()) {
             DataSource dataSource = entry.getValue();
-            if (dataSource instanceof org.apache.tomcat.jdbc.pool.DataSource) {
-                org.apache.tomcat.jdbc.pool.DataSource ds = (org.apache.tomcat.jdbc.pool.DataSource) dataSource;
-                map.put(entry.getKey(), ds.getActive());
+            if (dataSource instanceof IctDataSource) {
+                map.put(entry.getKey(),  ((IctDataSource) dataSource).getActive());
             }
         }
 

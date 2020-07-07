@@ -1,5 +1,6 @@
 package com.ppdai.das.core;
 
+import com.ichangtou.tomcat.IctTomcatPoolPropertiesHelper;
 import com.ppdai.das.core.configure.ConnectionString;
 import com.ppdai.das.core.configure.ConnectionStringConfigure;
 import com.ppdai.das.core.configure.DataSourceConfigure;
@@ -11,7 +12,6 @@ import org.slf4j.LoggerFactory;
 
 import com.ppdai.das.core.enums.IPDomainStatus;
 import com.ppdai.das.core.helper.ConnectionStringKeyHelper;
-import com.ppdai.das.core.helper.PoolPropertiesHelper;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class DefaultDataSourceConfigureLocator implements DataSourceConfigureLocator {
     protected static final Logger LOGGER = LoggerFactory.getLogger(DefaultDataSourceConfigureLocator.class);
     private static final String SEPARATOR = "\\.";
-    protected PoolPropertiesHelper poolPropertiesHelper = PoolPropertiesHelper.getInstance();
+    protected IctTomcatPoolPropertiesHelper poolPropertiesHelper = IctTomcatPoolPropertiesHelper.getInstance();
 
     private Map<String, ConnectionString> connectionStrings = new ConcurrentHashMap<>();
     protected AtomicReference<PropertiesWrapper> propertiesWrapperReference = new AtomicReference<>();

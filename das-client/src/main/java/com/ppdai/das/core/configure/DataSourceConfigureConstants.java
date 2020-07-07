@@ -1,6 +1,9 @@
 package com.ppdai.das.core.configure;
 
-public interface DataSourceConfigureConstants {
+import com.ichangtou.hikari.IctHikariDataSourceConfigureConstants;
+import com.ichangtou.tomcat.IctTomcatDataSourceConfigureConstants;
+
+public interface DataSourceConfigureConstants extends IctHikariDataSourceConfigureConstants, IctTomcatDataSourceConfigureConstants {
 
     // **********Pool properties key**********
     String USER_NAME = "userName";
@@ -39,7 +42,6 @@ public interface DataSourceConfigureConstants {
     String JDBC_INTERCEPTORS = "jdbcInterceptors";
 
 
-
     // **********Pool properties default value**********
     boolean DEFAULT_TESTWHILEIDLE = false;
     boolean DEFAULT_TESTONBORROW = true;
@@ -67,7 +69,6 @@ public interface DataSourceConfigureConstants {
     // com.ctrip.platform.dal.dao.interceptor.DefaultConnectionState
 
 
-
     // **********Constants**********
     String USE_LOCAL_CONFIG = "useLocalConfig";
     String DATABASE_CONFIG_LOCATION = "databaseConfigLocation";
@@ -81,4 +82,8 @@ public interface DataSourceConfigureConstants {
 
     String ENABLE_DYNAMIC_POOL_PROPERTIES = "enableDynamicPoolProperties";
 
+    // **************** dataSource types ****************
+    String DATASOURCE_CLASS_DRUID = "com.alibaba.druid.pool.DruidDataSource";
+    String DATASOURCE_CLASS_TOMCAT = "org.apache.tomcat.jdbc.pool.DataSource";
+    String DATASOURCE_CLASS_HIKARI = "com.zaxxer.hikari.HikariDataSource";
 }

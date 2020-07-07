@@ -1,11 +1,10 @@
 package com.ppdai.das.core.datasource;
 
-import org.apache.tomcat.jdbc.pool.ConnectionPool;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import com.ichangtou.IctDataSource;
 import com.ppdai.das.core.configure.DataSourceConfigure;
 import com.ppdai.das.core.configure.DataSourceConfigureConstants;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.util.Date;
@@ -60,7 +59,7 @@ public class DefaultDataSourceTerminateTask implements Runnable {
 
         try {
             // Tomcat DataSource
-            if (dataSource instanceof org.apache.tomcat.jdbc.pool.DataSource) {
+            if (dataSource instanceof IctDataSource) {
                 success = closeTomcatDataSource();
             }
         } catch (Throwable e) {
@@ -83,7 +82,7 @@ public class DefaultDataSourceTerminateTask implements Runnable {
         int elapsedSeconds = getElapsedSeconds();
         LOGGER.info(String.format("Elapsed seconds for datasource %s:%s", name, elapsedSeconds));
 
-        org.apache.tomcat.jdbc.pool.DataSource ds = (org.apache.tomcat.jdbc.pool.DataSource) dataSource;
+        IctDataSource ds = (IctDataSource) dataSource;
         if (retryTimes > MAX_RETRY_TIMES) {
             LOGGER.info(String.format("Force closing datasource %s,retry times:%s,max retry times:%s.", name,
                     retryTimes, MAX_RETRY_TIMES));
@@ -98,18 +97,18 @@ public class DefaultDataSourceTerminateTask implements Runnable {
             return success;
         }
 
-        ConnectionPool pool = ds.getPool();
+        Object pool = ds.getPool();
         if (pool == null) {
             return success;
         }
 
-        int idle = pool.getIdle();
+        int idle = ds.getIdle();
         if (idle > 0) {
-            pool.purge();
+            ds.purge();
             LOGGER.info(String.format("Idle connections of datasource %s have been closed.", name));
         }
 
-        int active = pool.getActive();
+        int active = ds.getActive();
         if (active == 0) {
             ds.close();
             LOGGER.info(

@@ -6,15 +6,15 @@ import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.ppdai.das.core.configure.DataSourceConfigureConstants;
-import com.ppdai.das.core.datasource.PoolPropertiesHolder;
-import com.ppdai.das.core.datasource.tomcat.DalTomcatDataSource;
+import com.ichangtou.IctPoolPropertiesHolder;
+import com.ichangtou.util.IctDataSourceUtil;
+import com.ichangtou.util.IctPoolPropertiesUtil;
 import com.ppdai.das.core.enums.DatabaseCategory;
-import com.ppdai.das.core.helper.PoolPropertiesHelper;
 import com.ppdai.das.core.status.StatusManager;
-import org.apache.tomcat.jdbc.pool.PoolProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLTimeoutException;
@@ -26,7 +26,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -37,13 +36,12 @@ import java.util.stream.Collectors;
 /**
  * It launches backend threads to query MRG (MySQL Replication Group) info at interval,
  * to refresh master/slave databases configuration.
- *
+ * <p>
  * Two read/write modes:
  * 1: Disable read/write splitting mode
- *    All read/write requests will be routed the single master, no slaves.
+ * All read/write requests will be routed the single master, no slaves.
  * 2: Enable read/write splitting mode
- *    Write requests will routed to single master, read ones will be routed to slaves.
- *
+ * Write requests will routed to single master, read ones will be routed to slaves.
  */
 public class MGRConfigReader {
 
@@ -51,22 +49,22 @@ public class MGRConfigReader {
 
     private DasConfigure dasConfigure;
     private Map<String, DatabaseSet> mgrDatabaseSetSnapshot = new ConcurrentHashMap<>();
-    private Set<String> exceptionalHosts= Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private Set<String> exceptionalHosts = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private ConcurrentHashMap<String, DSEntity> connectionString2DS = new ConcurrentHashMap<>();
     private static long HEATBEAT_INTERVAL = 3L;
-    private static Properties poolProperties;
+    //    private static Properties poolProperties;
     private static final String PRIMARY = "PRIMARY";
     private static final String SECONDARY = "SECONDARY";
     private static final String ONLINE = "ONLINE";
 
     private static final String MGR_INFO =
             "SELECT  MEMBER_ID, MEMBER_HOST, MEMBER_PORT, MEMBER_STATE, " +
-            "IF(global_status.VARIABLE_NAME IS NOT NULL, " +
-            "'" + PRIMARY+"', " +
-            "'" + SECONDARY +"') AS MEMBER_ROLE " +
-            "FROM performance_schema.replication_group_members " +
-            "LEFT JOIN performance_schema.global_status ON global_status.VARIABLE_NAME = 'group_replication_primary_member' " +
-            "AND global_status.VARIABLE_VALUE = replication_group_members.MEMBER_ID;";
+                    "IF(global_status.VARIABLE_NAME IS NOT NULL, " +
+                    "'" + PRIMARY + "', " +
+                    "'" + SECONDARY + "') AS MEMBER_ROLE " +
+                    "FROM performance_schema.replication_group_members " +
+                    "LEFT JOIN performance_schema.global_status ON global_status.VARIABLE_NAME = 'group_replication_primary_member' " +
+                    "AND global_status.VARIABLE_VALUE = replication_group_members.MEMBER_ID;";
 
     private ScheduledExecutorService executor;
 
@@ -75,7 +73,7 @@ public class MGRConfigReader {
     }
 
     private void createExecutor(int size) {
-        if(executor == null && size > 0) {
+        if (executor == null && size > 0) {
             executor = new ScheduledThreadPoolExecutor(size, r -> {
                 Thread thread = new Thread(r, "MGRConfigReader@start: " + new Date());
                 thread.setDaemon(true);
@@ -92,25 +90,23 @@ public class MGRConfigReader {
      * Independent data sources for MGR heart beat.
      */
     private void setUpDS() throws Exception {
-        Map<String, DalTomcatDataSource> uniq = Maps.newHashMap();
+        Map<String, DataSource> uniq = Maps.newHashMap();
         final ConnectionLocator locator = dasConfigure.getConnectionLocator();
         for (DatabaseSet dbSet : dasConfigure.getDatabaseSets().values()) {
-            if(!isMGRCandidate(dbSet)) {
+            if (!isMGRCandidate(dbSet)) {
                 continue;
             }
             Map<String, DataBase> dbs = dbSet.getDatabases();
             for (DataBase db : dbs.values()) {
-                try (Connection conn = locator.getConnection(db.getConnectionString())){
+                try (Connection conn = locator.getConnection(db.getConnectionString())) {
                     final String url = conn.getMetaData().getURL();
                     final String host = host(url);
-                    DalTomcatDataSource ds = uniq.get(host);
+                    DataSource ds = uniq.get(host);
                     boolean duplicate = true;
-                    if(ds == null){
-                        PoolProperties properties = PoolPropertiesHolder.getInstance().getPoolProperties(url, conn.getMetaData().getUserName());
-                        PoolProperties poolProperties = mergePoolProperties(properties);
-                        poolProperties.setUrl(toMGRCatalog(url));
-
-                        ds = new DalTomcatDataSource(poolProperties);
+                    if (ds == null) {
+                        Object propObj = IctPoolPropertiesHolder.getInstance().getPoolProperties(url, conn.getMetaData().getUserName());
+                        Object poolProperties = IctPoolPropertiesUtil.mergePoolProperties(propObj, toMGRCatalog(url));
+                        ds = IctDataSourceUtil.createDataSource(poolProperties);
                         uniq.put(host, ds);
                         duplicate = false;
                     }
@@ -125,7 +121,7 @@ public class MGRConfigReader {
 
     private String toMGRCatalog(String url) {
         List<String> list = Lists.newArrayList(Splitter.on("/").splitToList(url));
-        list.set(list.size() -1, "performance_schema");
+        list.set(list.size() - 1, "performance_schema");
         return Joiner.on("/").join(list);
     }
 
@@ -137,48 +133,50 @@ public class MGRConfigReader {
     /**
      * Merge existing data source and special configurations for MGR
      */
-    private PoolProperties mergePoolProperties(PoolProperties p) {
-        PoolProperties merged = PoolPropertiesHelper.getInstance().copy(p);
-        merged.setMinIdle(0); //don't cache connection
-        merged.setMinEvictableIdleTimeMillis(1000);
+//    private IctPoolProperties mergePoolProperties(IctPoolProperties p) {
+//        IctPoolProperties merged = IctPoolPropertiesHelper.getInstance().copy(p);
+//
+//        merged.mergeMGR(merged);
 
-        if(poolProperties == null) {//re-use data source configuration
-            return merged;
-        }
+//        merged.setMinIdle(0); //don't cache connection
+//        merged.setMinEvictableIdleTimeMillis(1000);
 
-        String testWhileIdle = poolProperties.getProperty(DataSourceConfigureConstants.TESTWHILEIDLE);
-        if(testWhileIdle != null){
-            merged.setTestWhileIdle(Boolean.valueOf(testWhileIdle));
-        }
+//        if(poolProperties == null) {//re-use data source configuration
+//            return merged;
+//        }
+//
+//        String testWhileIdle = poolProperties.getProperty(DataSourceConfigureConstants.TESTWHILEIDLE);
+//        if(testWhileIdle != null){
+//            merged.setTestWhileIdle(Boolean.valueOf(testWhileIdle));
+//        }
+//
+//        String testOnBorrow = poolProperties.getProperty(DataSourceConfigureConstants.TESTONBORROW);
+//        if(testOnBorrow != null){
+//            merged.setTestOnBorrow(Boolean.valueOf(testOnBorrow));
+//        }
+//
+//        String validationInterval = poolProperties.getProperty(DataSourceConfigureConstants.VALIDATIONINTERVAL);
+//        if(validationInterval != null){
+//            merged.setValidationInterval(Long.parseLong(validationInterval));
+//        }
+//
+//        String maxAge = poolProperties.getProperty(DataSourceConfigureConstants.MAX_AGE);
+//        if(maxAge != null){
+//            merged.setMaxAge(Long.parseLong(maxAge));
+//        }
+//
+//        String validationQueryTimeout = poolProperties.getProperty(DataSourceConfigureConstants.VALIDATIONQUERYTIMEOUT);
+//        if(validationQueryTimeout != null){
+//            merged.setValidationInterval(Long.parseLong(validationQueryTimeout));
+//        }
+//
+//        String validationQuery = poolProperties.getProperty(DataSourceConfigureConstants.VALIDATIONQUERY);
+//        if(validationQuery != null){
+//            merged.setValidationQuery(validationQuery);
+//        }
 
-        String testOnBorrow = poolProperties.getProperty(DataSourceConfigureConstants.TESTONBORROW);
-        if(testOnBorrow != null){
-            merged.setTestOnBorrow(Boolean.valueOf(testOnBorrow));
-        }
-
-        String validationInterval = poolProperties.getProperty(DataSourceConfigureConstants.VALIDATIONINTERVAL);
-        if(validationInterval != null){
-            merged.setValidationInterval(Long.parseLong(validationInterval));
-        }
-
-        String maxAge = poolProperties.getProperty(DataSourceConfigureConstants.MAX_AGE);
-        if(maxAge != null){
-            merged.setMaxAge(Long.parseLong(maxAge));
-        }
-
-        String validationQueryTimeout = poolProperties.getProperty(DataSourceConfigureConstants.VALIDATIONQUERYTIMEOUT);
-        if(validationQueryTimeout != null){
-            merged.setValidationInterval(Long.parseLong(validationQueryTimeout));
-        }
-
-        String validationQuery = poolProperties.getProperty(DataSourceConfigureConstants.VALIDATIONQUERY);
-        if(validationQuery != null){
-            merged.setValidationQuery(validationQuery);
-        }
-
-        return merged;
-    }
-
+//        return merged;
+//    }
     public void start() throws Exception {
         setUpDS();
         filterMGR();
@@ -228,15 +226,15 @@ public class MGRConfigReader {
             return isOnline() && isMaster();
         }
     }
-    
+
     private void filterMGR() throws Exception {
-        for(Map.Entry<String, DatabaseSet> setEnt : dasConfigure.getDatabaseSets().entrySet()) {
+        for (Map.Entry<String, DatabaseSet> setEnt : dasConfigure.getDatabaseSets().entrySet()) {
             DatabaseSet set = setEnt.getValue();
-            if(!isMGRCandidate(set)){
+            if (!isMGRCandidate(set)) {
                 continue;
             }
             boolean isMGR = set.getDatabases().values().stream().anyMatch(db -> !mgrInfoDB(db.getConnectionString(), 5).isEmpty());
-            if(isMGR) {
+            if (isMGR) {
                 mgrDatabaseSetSnapshot.put(setEnt.getKey(), set.deepCopy(set.getDatabases()));
             } else {
                 logger.error(set.getName() + " is NOT MGR node");
@@ -248,32 +246,33 @@ public class MGRConfigReader {
         List<MGRInfo> list = new ArrayList<>();
         DSEntity dsEntity = connectionString2DS.get(connectionString);
         String dbHost = dsEntity.getHost();
-        if(exceptionalHosts.contains(dbHost)) {
+        if (exceptionalHosts.contains(dbHost)) {
             return Lists.newArrayList(new MGRInfo("N/A", dbHost, "OFFLINE", "N/A"));
         }
 
         try (Connection connection = dsEntity.getDs().getConnection();
-             Statement stmt = connection.createStatement()){
-             stmt.setQueryTimeout(timeout);
-             try(ResultSet rs = stmt.executeQuery(MGR_INFO)) {
-                 while (rs.next()) {
-                     String host = rs.getString("MEMBER_HOST");
-                     String id = rs.getString("MEMBER_ID");
-                     int port = rs.getInt("MEMBER_PORT");
-                     String state = rs.getString("MEMBER_STATE");
-                     String role = rs.getString("MEMBER_ROLE");
+             Statement stmt = connection.createStatement()) {
+            stmt.setQueryTimeout(timeout);
+            logger.info(" mgr config reader sql:" + MGR_INFO);
+            try (ResultSet rs = stmt.executeQuery(MGR_INFO)) {
+                while (rs.next()) {
+                    String host = rs.getString("MEMBER_HOST");
+                    String id = rs.getString("MEMBER_ID");
+                    int port = rs.getInt("MEMBER_PORT");
+                    String state = rs.getString("MEMBER_STATE");
+                    String role = rs.getString("MEMBER_ROLE");
 
-                     //Invalid node
-                     if(Strings.isNullOrEmpty(host) || Strings.isNullOrEmpty(id)) {
-                         return Lists.newArrayList(new MGRInfo(id, dbHost, state, role));
-                     }
-                     list.add(new MGRInfo(id, host, state, role));
-                 }
-             }
-        } catch (SQLTimeoutException timeoutException){
+                    //Invalid node
+                    if (Strings.isNullOrEmpty(host) || Strings.isNullOrEmpty(id)) {
+                        return Lists.newArrayList(new MGRInfo(id, dbHost, state, role));
+                    }
+                    list.add(new MGRInfo(id, host, state, role));
+                }
+            }
+        } catch (SQLTimeoutException timeoutException) {
             logger.error("MGR heartbeat timeout: " + timeoutException.getMessage());
             return Lists.newArrayList(new MGRInfo("N/A", dbHost, "N/A", "N/A"));
-        }catch (Exception e) {
+        } catch (Exception e) {
             logger.error("MGR heartbeat exception:" + e.getMessage());
             return Lists.newArrayList(new MGRInfo("N/A", dbHost, "N/A", "N/A"));
         }
@@ -291,11 +290,11 @@ public class MGRConfigReader {
         @Override
         public DatabaseSet createDatabaseSet(DatabaseSet set, Map<String, MGRInfo> infos) throws Exception {
             Map<String, DataBase> newDBs = new HashMap<>();
-            for(Map.Entry<String, DataBase> dbEnt : set.getDatabases().entrySet()) {
+            for (Map.Entry<String, DataBase> dbEnt : set.getDatabases().entrySet()) {
                 DataBase db = dbEnt.getValue();
                 String host = MGRConfigReader.this.connectionString2DS.get(db.getConnectionString()).getHost();
                 MGRInfo info = infos.get(host);
-                if(info != null && info.isOnlineMaster()) {
+                if (info != null && info.isOnlineMaster()) {
                     newDBs.put(dbEnt.getKey(), db.deepCopy(true));
                 }
             }
@@ -310,11 +309,11 @@ public class MGRConfigReader {
         @Override
         public DatabaseSet createDatabaseSet(DatabaseSet set, Map<String, MGRInfo> infos) throws Exception {
             Map<String, DataBase> newDBs = new HashMap<>();
-            for(Map.Entry<String, DataBase> dbEnt : set.getDatabases().entrySet()) {
+            for (Map.Entry<String, DataBase> dbEnt : set.getDatabases().entrySet()) {
                 DataBase db = dbEnt.getValue();
                 String host = MGRConfigReader.this.connectionString2DS.get(db.getConnectionString()).getHost();
                 MGRInfo info = infos.get(host);
-                if(info != null && info.isOnline()){
+                if (info != null && info.isOnline()) {
                     newDBs.put(dbEnt.getKey(), db.deepCopy(info.isMaster()));
                 }
             }
@@ -324,7 +323,7 @@ public class MGRConfigReader {
 
     void updateMGRInfo(boolean isInit) throws Exception {
         List<MGRInfo> list = new ArrayList<>();
-        for(Map.Entry<String, DSEntity> ent : connectionString2DS.entrySet()) {
+        for (Map.Entry<String, DSEntity> ent : connectionString2DS.entrySet()) {
             List<MGRInfo> info = mgrInfoDB(ent.getKey(), 1);
             list.addAll(info);
         }
@@ -335,7 +334,9 @@ public class MGRConfigReader {
                 .collect(Collectors.toMap(Map.Entry::getKey,
                         e -> {
                             Optional<MGRInfo> candidate = e.getValue().stream()
-                                    .sorted((l, r) -> {return l.isOnline() ? -1 : 1;})
+                                    .sorted((l, r) -> {
+                                        return l.isOnline() ? -1 : 1;
+                                    })
                                     .findFirst();
 
                             return candidate.get();
@@ -350,10 +351,10 @@ public class MGRConfigReader {
             DatabaseSet newSet = handler.createDatabaseSet(set, infos);
             DatabaseSet current = dasConfigure.getDatabaseSets().get(setName);
             //Replace databaseSet atomically if changed
-            if(!current.equals(newSet)){
+            if (!current.equals(newSet)) {
                 dasConfigure.onDatabaseSetChanged(new DasConfigure.DatabaseSetChangeEvent(ImmutableMap.of(setName, newSet)));
-                if(!isInit) {
-                    for(String appId : DasConfigureFactory.getAppIds()) {
+                if (!isInit) {
+                    for (String appId : DasConfigureFactory.getAppIds()) {
                         StatusManager.registerApplication(appId, dasConfigure);
                     }
                 }
@@ -363,15 +364,15 @@ public class MGRConfigReader {
     }
 
     private void updateNodeStatus(Map<String, MGRInfo> infos) {
-        for(MGRInfo info : infos.values()){
-            if (info.isOnline()){
-                if(exceptionalHosts.remove(info.getHost())){
+        for (MGRInfo info : infos.values()) {
+            if (info.isOnline()) {
+                if (exceptionalHosts.remove(info.getHost())) {
                     logger.info("MGR node: " + info.getHost() + " is back to ONLINE.");
                 }
-            }else {
-                if(exceptionalHosts.add(info.getHost())){
+            } else {
+                if (exceptionalHosts.add(info.getHost())) {
                     logger.warn("MGR node: " + info.getHost() + " is NOT ONLINE any more.");
-                    if(exceptionalHosts.size() == 3){
+                    if (exceptionalHosts.size() == 3) {
                         logger.error("All MGR nodes are down!");
                     }
                 }
@@ -380,11 +381,11 @@ public class MGRConfigReader {
     }
 
     static class DSEntity {
-        DalTomcatDataSource ds;
+        DataSource ds;
         String host;
         boolean duplicate = false;
 
-        DSEntity(DalTomcatDataSource ds, String host, boolean duplicate) {
+        DSEntity(DataSource ds, String host, boolean duplicate) {
             this.ds = ds;
             this.host = host;
             this.duplicate = duplicate;
@@ -394,7 +395,7 @@ public class MGRConfigReader {
             return duplicate;
         }
 
-        DalTomcatDataSource getDs() {
+        DataSource getDs() {
             return ds;
         }
 

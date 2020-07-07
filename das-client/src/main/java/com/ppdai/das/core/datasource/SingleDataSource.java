@@ -1,50 +1,33 @@
 package com.ppdai.das.core.datasource;
 
-import java.lang.management.ManagementFactory;
+import com.ichangtou.IctDataSource;
+import com.ichangtou.hikari.IctHikariDataSource;
+import com.ichangtou.tomcat.IctTomcatDataSource;
+import com.ichangtou.util.IctDataSourceTypeUtil;
+import com.ppdai.das.core.configure.DataSourceConfigure;
+import com.ppdai.das.core.configure.DataSourceConfigureConstants;
+import com.ppdai.das.core.helper.ConnectionPhantomReferenceCleaner;
+import com.ppdai.das.core.helper.DefaultConnectionPhantomReferenceCleaner;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.management.InstanceAlreadyExistsException;
-import javax.management.InstanceNotFoundException;
-import javax.management.MBeanRegistrationException;
-import javax.management.MBeanServer;
-import javax.management.MalformedObjectNameException;
-import javax.management.NotCompliantMBeanException;
-import javax.management.ObjectName;
-import javax.sql.DataSource;
-
-import com.ppdai.das.core.datasource.tomcat.DasTomcatDataSource;
-import org.apache.tomcat.jdbc.pool.PoolProperties;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.ppdai.das.core.configure.DataSourceConfigure;
-import com.ppdai.das.core.configure.DataSourceConfigureConstants;
-import com.ppdai.das.core.datasource.tomcat.DalTomcatDataSource;
-import com.ppdai.das.core.helper.ConnectionPhantomReferenceCleaner;
-import com.ppdai.das.core.helper.DefaultConnectionPhantomReferenceCleaner;
-import com.ppdai.das.core.helper.PoolPropertiesHelper;
-import com.ppdai.das.core.helper.ServiceLoaderHelper;
-import com.ppdai.das.core.log.Callback;
-import com.ppdai.das.core.log.DefaultLoggerImpl;
-import com.ppdai.das.core.log.ILogger;
-
-public class SingleDataSource implements DataSourceConfigureConstants {
+public class SingleDataSource {
     private static final Logger LOGGER = LoggerFactory.getLogger(SingleDataSource.class);
-    private PoolPropertiesHelper poolPropertiesHelper = PoolPropertiesHelper.getInstance();
     private String name;
     private DataSourceConfigure dataSourceConfigure;
     private DataSource dataSource;
 
-    private static final String DAL = "DAL";
-    private static final String DATASOURCE_CREATE_DATASOURCE = "DataSource::createDataSource:%s";
-    private static ILogger ilogger = ServiceLoaderHelper.getInstance(ILogger.class, DefaultLoggerImpl.class);
+    //hikari,tomcat,druid
+    private String dataSourceType;
 
     private static ConnectionPhantomReferenceCleaner connectionPhantomReferenceCleaner = new DefaultConnectionPhantomReferenceCleaner();
-    private static AtomicBoolean containsMySQL=new AtomicBoolean(false);
+    private static AtomicBoolean containsMySQL = new AtomicBoolean(false);
     private static final String MYSQL_URL_PREFIX = "jdbc:mysql://";
-    public static final String JMX_TOMCAT_DATASOURCE = "TomcatDataSource";
 
     public String getName() {
         return name;
@@ -67,21 +50,24 @@ public class SingleDataSource implements DataSourceConfigureConstants {
             this.name = name;
             this.dataSourceConfigure = dataSourceConfigure;
 
-            PoolProperties p = poolPropertiesHelper.convert(dataSourceConfigure);
-            PoolPropertiesHolder.getInstance().setPoolProperties(p);
-            final org.apache.tomcat.jdbc.pool.DataSource dataSource = new DalTomcatDataSource(p);
-            this.dataSource = dataSource;
+            this.dataSourceType = IctDataSourceTypeUtil.getDataSourceType();
 
-            String message = String.format("Datasource[name=%s, Driver=%s] created,connection url:%s", name,
-                    p.getDriverClassName(), dataSourceConfigure.getConnectionUrl());
-            ilogger.logTransaction(DAL, String.format(DATASOURCE_CREATE_DATASOURCE, name), message, new Callback() {
-                @Override
-                public void execute() throws Exception {
-                    dataSource.createPool();
-                }
-            });
-            registerDataSource();
+            String message = null;
+            IctDataSource ictDataSource = null;
+            //TODO hikari datasource
+            if (DataSourceConfigureConstants.DATASOURCE_CLASS_HIKARI.equalsIgnoreCase(dataSourceType)) {
+                ictDataSource = new IctHikariDataSource();
 
+                //TODO druid datasource
+            } else if (DataSourceConfigureConstants.DATASOURCE_CLASS_DRUID.equalsIgnoreCase(dataSourceType)) {
+//                ictDataSource = new IctDruidDataSource();
+
+                //tomcat datasource
+            } else if (DataSourceConfigureConstants.DATASOURCE_CLASS_TOMCAT.equalsIgnoreCase(dataSourceType)) {
+                ictDataSource = new IctTomcatDataSource();
+            }
+
+            this.dataSource = ictDataSource.createDatasource(name, dataSourceConfigure);
             LOGGER.info(message);
         } catch (Throwable e) {
             LOGGER.error(String.format("Error creating pool for data source %s", name), e);
@@ -89,7 +75,7 @@ public class SingleDataSource implements DataSourceConfigureConstants {
 
         try {
             if (!containsMySQL.get()) {
-                if (dataSourceConfigure.getConnectionUrl().startsWith(MYSQL_URL_PREFIX)){
+                if (dataSourceConfigure.getConnectionUrl().startsWith(MYSQL_URL_PREFIX)) {
                     connectionPhantomReferenceCleaner.start();
                     containsMySQL.set(true);
                 }
@@ -99,17 +85,7 @@ public class SingleDataSource implements DataSourceConfigureConstants {
         }
     }
 
-    private void registerDataSource() throws MalformedObjectNameException, NotCompliantMBeanException, InstanceAlreadyExistsException, MBeanRegistrationException, InstanceNotFoundException {
-        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
-        ObjectName objectName = new ObjectName(JMX_TOMCAT_DATASOURCE, "type", name);
-        if(mbs.isRegistered(objectName)) {
-            mbs.unregisterMBean(objectName);
-        }
-        DasTomcatDataSource dasTomcatDataSource = new DasTomcatDataSource((DalTomcatDataSource)dataSource);
-        mbs.registerMBean(dasTomcatDataSource, objectName) ;
-    }
-
-    private void testConnection(org.apache.tomcat.jdbc.pool.DataSource dataSource) throws SQLException {
+    private void testConnection(DataSource dataSource) throws SQLException {
         if (dataSource == null) {
             return;
         }

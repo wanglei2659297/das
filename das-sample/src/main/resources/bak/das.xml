@@ -1,0 +1,11 @@
+<das name="das_shart_test">
+	<databaseSets>
+		<databaseSet name="das_shardtest01" provider="mySqlProvider"
+             shardingStrategy="class=com.ppdai.das.strategy.AdvancedModStrategy;shardByTable=true;shardByDb=true;separator=_;shardedTables=person;mod=2;columns=PeopleID;tableMod=4;tableColumns=PeopleID">
+            <add name="das_test_slave_01" connectionString="das_test_slave_01" databaseType="Slave" sharding="1"/>
+            <add name="das_test_master_01" connectionString="das_test_master_01" databaseType="Master" sharding="1"/>
+            <add name="das_test_master_00" connectionString="das_test_master_00" databaseType="Master" sharding="0"/>
+            <add name="das_test_slave_00" connectionString="das_test_slave_00" databaseType="Slave" sharding="0"/>
+		</databaseSet>
+	</databaseSets>
+</das>
